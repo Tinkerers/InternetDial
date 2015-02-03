@@ -40,6 +40,8 @@ byte snmp_packet[] = {
 // An EthernetUDP instance to let us send and receive packets over UDP
 EthernetUDP Udp;
 
+uint32_t last_octets = 0;
+
 void setup() {
   Serial.begin(9600);
 
@@ -47,82 +49,48 @@ void setup() {
   Ethernet.begin(mac);
   //Ethernet.localIP();
   Udp.begin(localPort);
+}
 
-  // Seed our random
-  randomSeed(analogRead(0));
-  //randNumber = random(1000, 30000);
-  //Serial.print("randNumber: ");
-  //Serial.println(randNumber);  
-  //snmp_packet[24] = random(0, 127);
-  //snmp_packet[25] = random(0, 127);
-  //snmp_packet[26] = random(0, 127);
-  //snmp_packet[27] = random(0, 127);
-
-  Serial.println("sending snmp_packet: ");
-  for (int i=0; i < sizeof(snmp_packet); i++) {
-    Serial.print(i);
-    Serial.print(": ");
-    Serial.println(snmp_packet[i], HEX);
-  }
-  Serial.println("end of sent snmp_packet");
+uint32_t getInOctets() {
 
   // Send the packet
   Udp.beginPacket(serverIP, serverPort);
   int bytesSent = Udp.write(snmp_packet, sizeof(snmp_packet));
-  Serial.print("sent bytes: ");
-  Serial.println(bytesSent);
   Udp.endPacket();
+
+  // if there's data available, read a packet
+  int packetSize = Udp.parsePacket();
+  uint32_t octets_in = 0;
+
+  if(packetSize) {
+    Serial.print("Received packet of size: ");
+    Serial.println(packetSize);
+    // read the packet into packetBufffer
+    Udp.read(packetBuffer, packetSize);
+    
+    octets_in = ((uint32_t)packetBuffer[packetSize-4] << 24) + ((uint32_t)packetBuffer[packetSize-3] << 16)
+            + ((uint32_t)packetBuffer[packetSize-2] << 8) + ((uint32_t)packetBuffer[packetSize-1]);
+  } else {
+    Serial.println("No packet received!");
+  }
+//  Udp.stop();
+  return octets_in;
 }
 
 void loop() {
- 
-  // if there's data available, read a packet
-  int packetSize = Udp.parsePacket();
-  if(packetSize)
-  {
-    Serial.print("Received packet of size ");
-    Serial.println(packetSize);
-    Serial.print("From ");
-    IPAddress remote = Udp.remoteIP();
-    for (int i =0; i < 4; i++)
-    {
-      Serial.print(remote[i], DEC);
-      if (i < 3)
-      {
-        Serial.print(".");
-      }
-    }
-    Serial.print(", port ");
-    Serial.println(Udp.remotePort());
-
-    // read the packet into packetBufffer
-    Udp.read(packetBuffer, packetSize);
-    Serial.println("Contents:");
-    for (int i=0; i < packetSize; i++) {
-      Serial.print(i);
-      Serial.print(": ");
-      Serial.println(packetBuffer[i], HEX);
-    }
-    Serial.println("end of received packet");
-    
-    
-    
-    uint32_t thirty_two;
-
-    Serial.print("Error?: ");
-    Serial.println(packetBuffer[30], HEX);
-    Serial.print("Octets MSB hex: ");
-    Serial.println(packetBuffer[packetSize-4], HEX);
-    Serial.print("Octets MSB dec: ");
-    Serial.println(((uint32_t)packetBuffer[packetSize-4] << 24));
-    
-    thirty_two = ((uint32_t)packetBuffer[packetSize-4] << 24) + ((uint32_t)packetBuffer[packetSize-3] << 16)
-            + ((uint32_t)packetBuffer[packetSize-2] << 8) + ((uint32_t)packetBuffer[packetSize-1]);
-
-    Serial.print("InOctets: ");
-    Serial.println(thirty_two);
-  }   
-  delay(10);
+  unsigned long start_ts = millis();
+  uint32_t octets = getInOctets();
+  uint32_t delta = octets - last_octets;
+  unsigned long duration = millis() - start_ts;
+  int poll_time = 1000;
+  Serial.print("Octets: ");
+  Serial.println(octets);
+  Serial.print("delta: ");
+  Serial.println(delta);
+  Serial.print("KBytes per second: ");
+  Serial.println((delta / duration) * 1000 / 8);
+  delay(poll_time);
+  last_octets = octets;
 }
 
 

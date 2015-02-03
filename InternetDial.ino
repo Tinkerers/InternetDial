@@ -1,22 +1,16 @@
 /*
-  UDPSendReceive.pde:
- This sketch receives UDP message strings, prints them to the serial port
- and sends an "acknowledge" string back to the sender
+ This sketch sends a hard-coded UDP get request to a pfSense firewall
+ to retrieve the octet count on a specific interface. It then uses this
+ value to determine the current speed of traffic on the interface and
+ updates an attached Switec stepper motor module to display the value
+ on a physical dial.
  
- A Processing sketch is included at the end of file that can be used to send 
- and received messages for testing with a computer.
- 
- created 21 Aug 2010
- by Michael Margolis
- 
- This code is in the public domain.
  */
 
 
 #include <SPI.h>         // needed for Arduino versions later than 0018
 #include <Ethernet.h>
-#include <EthernetUdp.h>         // UDP library from: bjoern@cs.stanford.edu 12/30/2008
-
+#include <EthernetUdp.h>         // UDP library from: bjoern@cs.stanford.edu
 #include <SwitecX25.h>
 
 // standard X25.168 range 315 degrees at 1/3 degree steps
@@ -24,7 +18,6 @@
 
 // For motors connected to pins 3,4,5,6
 SwitecX25 motor1(STEPS,4,5,6,7);
-
 
 int poll_time = 1000;
 
@@ -39,6 +32,8 @@ unsigned int localPort = 8888;      // local port to listen on
 // buffers for receiving and sending data
 byte packetBuffer[59]; //buffer to hold incoming packet,
 
+// Yes we're aware of security concerns here. We've decided we don't care in
+// this instance.
 byte snmp_packet[] = {
 0x30, 0x33, 0x02, 0x01, 0x01, 0x04, 0x0d, 0x31, 0x36, 0x31, 0x37, 0x63, 0x30, 0x77, 0x30, 0x72,
 0x6b, 0x69, 0x6e, 0x67, 0xa0, 0x1f, 0x02, 0x04, 0x10, 0xde, 0x4d, 0x7e, 0x02, 0x01, 0x00, 0x02,
@@ -62,13 +57,9 @@ void setup() {
   
   // run the motor against the stops
   motor1.zero();
-  // start moving towards the center of the range
-  motor1.setPosition(STEPS/2);
-
 }
 
 uint32_t getInOctets() {
-
   // Send the packet
   Udp.beginPacket(serverIP, serverPort);
   int bytesSent = Udp.write(snmp_packet, sizeof(snmp_packet));
@@ -93,6 +84,9 @@ uint32_t getInOctets() {
   return octets_in;
 }
 
+/* The motor won't move while we're in a delay(), so we have to
+   take breaks from the delay to update the motor.
+*/
 void motor_delay(int ms) {
   for(int i=0; i < ms; i++) {
     delay(1);
@@ -114,18 +108,11 @@ void loop() {
   unsigned long kbps = delta_kbytes / (duration/1000);
   Serial.println(kbps);
   
-  unsigned long scaled = kbps * 944 / 25000; // 7680 == 60Mbit/s
+  unsigned long scaled = kbps * STEPS / 25000; // 7680 == 60Mbit/s
   Serial.print("scaled: ");
   Serial.println(scaled);
 
   
   motor1.setPosition(scaled);
   motor_delay(poll_time);
-
-  
-  
 }
-
-
-
-
